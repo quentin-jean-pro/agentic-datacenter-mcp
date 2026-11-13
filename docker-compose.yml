@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # FastMCP Compute Telemetry & Actuation Microservice (Port 8001)
+  compute-mcp:
+    build: .
+    command: python src/mcp_servers/compute_telemetry_server.py
+    ports:
+      - "8001:8001"
+    environment:
+      - COMPUTE_MCP_HOST=0.0.0.0
+      - COMPUTE_MCP_PORT=8001
+      - DRY_RUN=True
+    restart: unless-stopped
+
+  # FastMCP Workload Policy & DuckDB Vector Microservice (Port 8002)
+  policy-mcp:
+    build: .
+    command: python src/mcp_servers/workload_policy_server.py
+    ports:
+      - "8002:8002"
+    volumes:
+      - datacenter_data:/app/data_policies
+    environment:
+      - POLICY_MCP_HOST=0.0.0.0
+      - POLICY_MCP_PORT=8002
+      - DRY_RUN=True
+    restart: unless-stopped
+
+  # Interactive Web Dashboard (Streamlit UI on Port 8501)
+  web-dashboard:
+    build: .
+    command: streamlit run src/app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      - COMPUTE_MCP_URL=http://compute-mcp:8001/sse
+      - POLICY_MCP_URL=http://policy-mcp:8002/sse
+    depends_on:
+      - compute-mcp
+      - policy-mcp
+    restart: unless-stopped
+
+volumes:
+  datacenter_data:
+
