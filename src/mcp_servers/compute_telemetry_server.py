@@ -53,7 +53,10 @@ file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
 # Initialize FastMCP Server
-mcp = FastMCP("DataCenter_Compute_Server", host=COMPUTE_MCP_HOST, port=COMPUTE_MCP_PORT)
+try:
+    mcp = FastMCP("DataCenter_Compute_Server", host=COMPUTE_MCP_HOST, port=COMPUTE_MCP_PORT)
+except TypeError:
+    mcp = FastMCP("DataCenter_Compute_Server")
 
 # In-memory rate limiting and node state dictionary
 node_last_action: Dict[str, datetime] = {}

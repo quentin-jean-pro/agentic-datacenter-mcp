@@ -68,7 +68,10 @@ except Exception as e:
     embedding_model = FallbackEmbedding()
 
 # --- 3. FASTMCP SERVER INITIALIZATION ---
-mcp = FastMCP("DataCenter_Policy_Server", host=POLICY_MCP_HOST, port=POLICY_MCP_PORT)
+try:
+    mcp = FastMCP("DataCenter_Policy_Server", host=POLICY_MCP_HOST, port=POLICY_MCP_PORT)
+except TypeError:
+    mcp = FastMCP("DataCenter_Policy_Server")
 
 # --- 4. EXPOSED MCP TOOLS ---
 
