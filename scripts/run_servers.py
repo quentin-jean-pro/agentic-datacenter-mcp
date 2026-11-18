@@ -1,10 +1,12 @@
 """
 Convenience launcher to run both FastMCP Data Center servers concurrently.
 """
+
 import subprocess
 import sys
 import time
 from pathlib import Path
+
 
 def main():
     root = Path(__file__).resolve().parent.parent
@@ -27,6 +29,7 @@ def main():
         p1.wait()
         p2.wait()
         print("Done.")
+
 
 if __name__ == "__main__":
     main()

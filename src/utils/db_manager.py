@@ -1,14 +1,14 @@
-import os
-import uuid
 import logging
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 import duckdb
 import numpy as np
 
 logger = logging.getLogger("DataCenter.DBManager")
+
 
 class PolicyDBManager:
     """
@@ -16,15 +16,16 @@ class PolicyDBManager:
     Each engineering team gets a dedicated database file in DATA_DIR to guarantee data isolation.
     Operates as a Context Manager to ensure immediate connection cleanup and zero database locks.
     """
-    def __init__(self, team_id: str, db_dir: Optional[Path | str] = None):
+
+    def __init__(self, team_id: str, db_dir: Path | str | None = None):
         self.team_id = team_id
-        safe_team_id = "".join([c for c in team_id if c.isalnum() or c in ('_', '-')]).strip()
+        safe_team_id = "".join([c for c in team_id if c.isalnum() or c in ("_", "-")]).strip()
         if not safe_team_id:
             safe_team_id = "default_team"
-        
+
         self.db_dir = Path(db_dir) if db_dir else Path("data_policies")
         self.db_path = self.db_dir / f"team_{safe_team_id}.db"
-        self.conn: Optional[duckdb.DuckDBPyConnection] = None
+        self.conn: duckdb.DuckDBPyConnection | None = None
 
     def __enter__(self):
         self.db_dir.mkdir(parents=True, exist_ok=True)
@@ -71,13 +72,13 @@ class PolicyDBManager:
         sla_deadline: str,
         raw_prompt: str,
         semantic_summary: str,
-        vector: List[float]
+        vector: list[float],
     ) -> str:
         """
         Inserts a new workload scheduling intent with normalized embedding vector.
         """
         interaction_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         query = """
             INSERT INTO workload_policies (
@@ -96,13 +97,15 @@ class PolicyDBManager:
                 sla_deadline,
                 raw_prompt,
                 semantic_summary,
-                vector
-            )
+                vector,
+            ),
         )
         logger.info(f"Policy interaction '{interaction_id}' stored for team '{self.team_id}'.")
         return interaction_id
 
-    def get_similar_policies(self, query_vector: List[float], limit: int = 3) -> List[Dict[str, Any]]:
+    def get_similar_policies(
+        self, query_vector: list[float], limit: int = 3
+    ) -> list[dict[str, Any]]:
         """
         Performs vector cosine similarity search over stored team workload policies.
         Uses in-memory NumPy operations for high throughput with zero external vector DB dependencies.
@@ -128,16 +131,18 @@ class PolicyDBManager:
 
         for row in rows:
             vectors.append(row[8])
-            metadata.append({
-                "id": row[0],
-                "timestamp": str(row[1]),
-                "project_name": row[2],
-                "workload_type": row[3],
-                "priority_tier": row[4],
-                "sla_deadline": row[5],
-                "raw_prompt": row[6],
-                "semantic_summary": row[7]
-            })
+            metadata.append(
+                {
+                    "id": row[0],
+                    "timestamp": str(row[1]),
+                    "project_name": row[2],
+                    "workload_type": row[3],
+                    "priority_tier": row[4],
+                    "sla_deadline": row[5],
+                    "raw_prompt": row[6],
+                    "semantic_summary": row[7],
+                }
+            )
 
         matrix = np.array(vectors, dtype=np.float32)
         norms = np.linalg.norm(matrix, axis=1)

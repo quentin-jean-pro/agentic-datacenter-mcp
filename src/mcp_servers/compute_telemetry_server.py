@@ -1,10 +1,10 @@
-import os
-import sys
 import json
 import logging
+import os
+import sys
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Any
+from typing import Any
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -12,17 +12,24 @@ except ImportError:
     try:
         from fastmcp import FastMCP
     except ImportError:
+
         class FastMCP:
             def __init__(self, name: str, host: str = "0.0.0.0", port: int = 8000):
                 self.name = name
                 self.host = host
                 self.port = port
+
             def tool(self):
                 def decorator(fn):
                     return fn
+
                 return decorator
+
             def run(self, transport="sse"):
-                print(f"Mock FastMCP '{self.name}' running on {self.host}:{self.port} ({transport})")
+                print(
+                    f"Mock FastMCP '{self.name}' running on {self.host}:{self.port} ({transport})"
+                )
+
 
 # Add parent directory to sys.path if run directly
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,21 +41,23 @@ from src.config import (
     COMPUTE_MCP_HOST,
     COMPUTE_MCP_PORT,
     DRY_RUN,
+    PROMETHEUS_JOB,
     TELEMETRY_ENDPOINT,
-    PROMETHEUS_JOB
 )
 
 # --- 1. SETUP & LOGGING ---
 logger = logging.getLogger("DataCenter_MCP")
 logger.setLevel(logging.INFO)
 
-formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-file_handler = RotatingFileHandler("datacenter_compute.log", maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+file_handler = RotatingFileHandler(
+    "datacenter_compute.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
@@ -59,8 +68,8 @@ except TypeError:
     mcp = FastMCP("DataCenter_Compute_Server")
 
 # In-memory rate limiting and node state dictionary
-node_last_action: Dict[str, datetime] = {}
-CLUSTER_STATE: Dict[str, Dict[str, Any]] = {
+node_last_action: dict[str, datetime] = {}
+CLUSTER_STATE: dict[str, dict[str, Any]] = {
     "node-alpha": {
         "gpu_model": "NVIDIA H100 80GB",
         "gpu_count": 8,
@@ -69,7 +78,7 @@ CLUSTER_STATE: Dict[str, Dict[str, Any]] = {
         "power_cap_watts": 400,
         "utilization_pct": 68.0,
         "throttle_percent": 0,
-        "allocated_jobs": ["job_crossvit_01"]
+        "allocated_jobs": ["job_crossvit_01"],
     },
     "node-beta": {
         "gpu_model": "NVIDIA H100 80GB",
@@ -79,7 +88,7 @@ CLUSTER_STATE: Dict[str, Dict[str, Any]] = {
         "power_cap_watts": 400,
         "utilization_pct": 92.0,
         "throttle_percent": 0,
-        "allocated_jobs": ["job_llm_pretrain_04"]
+        "allocated_jobs": ["job_llm_pretrain_04"],
     },
     "node-gamma": {
         "gpu_model": "NVIDIA A100 80GB",
@@ -89,7 +98,7 @@ CLUSTER_STATE: Dict[str, Dict[str, Any]] = {
         "power_cap_watts": 400,
         "utilization_pct": 98.0,
         "throttle_percent": 10,
-        "allocated_jobs": ["job_diffusion_eval"]
+        "allocated_jobs": ["job_diffusion_eval"],
     },
     "node-delta": {
         "gpu_model": "NVIDIA A100 80GB",
@@ -99,12 +108,15 @@ CLUSTER_STATE: Dict[str, Dict[str, Any]] = {
         "power_cap_watts": 350,
         "utilization_pct": 35.0,
         "throttle_percent": 0,
-        "allocated_jobs": []
-    }
+        "allocated_jobs": [],
+    },
 }
 
+
 # --- 2. JSON CONTRACT HELPER ---
-def build_mcp_response(status: str, system_context: dict, measurement: str, tags: dict, fields: dict) -> str:
+def build_mcp_response(
+    status: str, system_context: dict, measurement: str, tags: dict, fields: dict
+) -> str:
     """
     Builds a strict, immutable JSON contract envelope returned to the AI Agent.
     Guarantees client-side parsing stability and transparent telemetry tracing.
@@ -116,17 +128,19 @@ def build_mcp_response(status: str, system_context: dict, measurement: str, tags
             "telemetry_written": not DRY_RUN and status == "SUCCESS",
             "measurement": measurement,
             "tags": tags,
-            "fields": fields
-        }
+            "fields": fields,
+        },
     }
     if status == "SUCCESS":
         logger.info(f"📤 Action Successful (Measurement: {measurement}) | Status: {status}")
     else:
         logger.error(f"❌ Action Failure (Measurement: {measurement}) | Status: {status}")
-        
+
     return json.dumps(response, indent=2, ensure_ascii=False)
 
+
 # --- 3. MCP TOOLS: READ (Sensors & Cluster Telemetry) ---
+
 
 @mcp.tool()
 async def ping_compute_server() -> str:
@@ -134,10 +148,14 @@ async def ping_compute_server() -> str:
     try:
         return build_mcp_response(
             status="SUCCESS",
-            system_context={"status": "online", "dry_run": DRY_RUN, "telemetry_endpoint": TELEMETRY_ENDPOINT},
+            system_context={
+                "status": "online",
+                "dry_run": DRY_RUN,
+                "telemetry_endpoint": TELEMETRY_ENDPOINT,
+            },
             measurement="system_ping",
             tags={},
-            fields={}
+            fields={},
         )
     except Exception as e:
         logger.exception(f"Error in ping_compute_server: {e}")
@@ -146,8 +164,9 @@ async def ping_compute_server() -> str:
             system_context={"error_details": str(e)},
             measurement="system_ping",
             tags={},
-            fields={}
+            fields={},
         )
+
 
 @mcp.tool()
 async def get_cluster_telemetry() -> str:
@@ -159,7 +178,9 @@ async def get_cluster_telemetry() -> str:
     try:
         total_power = sum(node["power_draw_watts"] for node in CLUSTER_STATE.values())
         max_temp = max(node["temperature_celsius"] for node in CLUSTER_STATE.values())
-        avg_util = sum(node["utilization_pct"] for node in CLUSTER_STATE.values()) / len(CLUSTER_STATE)
+        avg_util = sum(node["utilization_pct"] for node in CLUSTER_STATE.values()) / len(
+            CLUSTER_STATE
+        )
 
         metrics = {
             "pue": 1.18,
@@ -167,7 +188,7 @@ async def get_cluster_telemetry() -> str:
             "total_cluster_power_watts": total_power,
             "max_gpu_temperature_celsius": max_temp,
             "average_cluster_utilization_pct": round(avg_util, 1),
-            "nodes": CLUSTER_STATE
+            "nodes": CLUSTER_STATE,
         }
 
         return build_mcp_response(
@@ -175,7 +196,7 @@ async def get_cluster_telemetry() -> str:
             system_context=metrics,
             measurement="cluster_telemetry",
             tags={"cluster_id": "eu_west_ai_pod_1", "job": PROMETHEUS_JOB},
-            fields={"total_power": total_power, "max_temp": max_temp, "pue": 1.18}
+            fields={"total_power": total_power, "max_temp": max_temp, "pue": 1.18},
         )
     except Exception as e:
         logger.exception(f"Error in get_cluster_telemetry: {e}")
@@ -184,10 +205,12 @@ async def get_cluster_telemetry() -> str:
             system_context={"error_details": str(e)},
             measurement="cluster_telemetry",
             tags={},
-            fields={}
+            fields={},
         )
 
+
 # --- 4. MCP TOOLS: WRITE (Actuation, Capping & Job Dispatch) ---
+
 
 @mcp.tool()
 async def set_node_power_cap(node_id: str, power_cap_watts: int) -> str:
@@ -202,11 +225,11 @@ async def set_node_power_cap(node_id: str, power_cap_watts: int) -> str:
                 system_context={"error": f"Node '{node_id}' not found in cluster topology."},
                 measurement="node_power_cap",
                 tags={"node_id": node_id},
-                fields={}
+                fields={},
             )
 
         # Rate limiting: 30 seconds cooldown per node
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if node_id in node_last_action:
             elapsed = (now - node_last_action[node_id]).total_seconds()
             if elapsed < 30.0:
@@ -215,11 +238,11 @@ async def set_node_power_cap(node_id: str, power_cap_watts: int) -> str:
                     status="REJECTED_RATE_LIMIT",
                     system_context={
                         "error": f"Rate limit active on {node_id}. Please wait {cooldown_remaining}s.",
-                        "cooldown_remaining_seconds": cooldown_remaining
+                        "cooldown_remaining_seconds": cooldown_remaining,
                     },
                     measurement="node_power_cap",
                     tags={"node_id": node_id},
-                    fields={}
+                    fields={},
                 )
 
         # Hardware safety boundary clamping: [200, 450] W
@@ -233,11 +256,11 @@ async def set_node_power_cap(node_id: str, power_cap_watts: int) -> str:
                 "message": f"Power cap updated on {node_id}.",
                 "node_id": node_id,
                 "requested_watts": power_cap_watts,
-                "applied_watts": clamped_watts
+                "applied_watts": clamped_watts,
             },
             measurement="node_power_cap",
             tags={"node_id": node_id},
-            fields={"applied_power_cap_watts": clamped_watts}
+            fields={"applied_power_cap_watts": clamped_watts},
         )
     except Exception as e:
         logger.exception(f"Error in set_node_power_cap: {e}")
@@ -246,8 +269,9 @@ async def set_node_power_cap(node_id: str, power_cap_watts: int) -> str:
             system_context={"error_details": str(e)},
             measurement="node_power_cap",
             tags={"node_id": node_id},
-            fields={}
+            fields={},
         )
+
 
 @mcp.tool()
 async def throttle_node(node_id: str, throttle_percent: int) -> str:
@@ -261,7 +285,7 @@ async def throttle_node(node_id: str, throttle_percent: int) -> str:
                 system_context={"error": f"Node '{node_id}' not found."},
                 measurement="node_throttle",
                 tags={"node_id": node_id},
-                fields={}
+                fields={},
             )
 
         clamped_throttle = max(0, min(50, throttle_percent))
@@ -272,11 +296,11 @@ async def throttle_node(node_id: str, throttle_percent: int) -> str:
             system_context={
                 "node_id": node_id,
                 "applied_throttle_percent": clamped_throttle,
-                "temperature_celsius": CLUSTER_STATE[node_id]["temperature_celsius"]
+                "temperature_celsius": CLUSTER_STATE[node_id]["temperature_celsius"],
             },
             measurement="node_throttle",
             tags={"node_id": node_id},
-            fields={"throttle_percent": clamped_throttle}
+            fields={"throttle_percent": clamped_throttle},
         )
     except Exception as e:
         logger.exception(f"Error in throttle_node: {e}")
@@ -285,11 +309,14 @@ async def throttle_node(node_id: str, throttle_percent: int) -> str:
             system_context={"error_details": str(e)},
             measurement="node_throttle",
             tags={"node_id": node_id},
-            fields={}
+            fields={},
         )
 
+
 @mcp.tool()
-async def dispatch_workload(job_id: str, node_id: str, gpus_allocated: int, priority_tier: str) -> str:
+async def dispatch_workload(
+    job_id: str, node_id: str, gpus_allocated: int, priority_tier: str
+) -> str:
     """
     Schedules an AI training or inference workload on an available compute node.
     """
@@ -300,7 +327,7 @@ async def dispatch_workload(job_id: str, node_id: str, gpus_allocated: int, prio
                 system_context={"error": f"Node '{node_id}' not found."},
                 measurement="workload_dispatch",
                 tags={"job_id": job_id},
-                fields={}
+                fields={},
             )
 
         node = CLUSTER_STATE[node_id]
@@ -312,7 +339,7 @@ async def dispatch_workload(job_id: str, node_id: str, gpus_allocated: int, prio
                 },
                 measurement="workload_dispatch",
                 tags={"job_id": job_id, "node_id": node_id},
-                fields={}
+                fields={},
             )
 
         if job_id not in node["allocated_jobs"]:
@@ -324,11 +351,11 @@ async def dispatch_workload(job_id: str, node_id: str, gpus_allocated: int, prio
                 "message": f"Job '{job_id}' dispatched to '{node_id}'.",
                 "gpus_allocated": gpus_allocated,
                 "priority_tier": priority_tier,
-                "current_node_jobs": node["allocated_jobs"]
+                "current_node_jobs": node["allocated_jobs"],
             },
             measurement="workload_dispatch",
             tags={"job_id": job_id, "node_id": node_id, "priority": priority_tier},
-            fields={"gpus_allocated": gpus_allocated}
+            fields={"gpus_allocated": gpus_allocated},
         )
     except Exception as e:
         logger.exception(f"Error in dispatch_workload: {e}")
@@ -337,9 +364,12 @@ async def dispatch_workload(job_id: str, node_id: str, gpus_allocated: int, prio
             system_context={"error_details": str(e)},
             measurement="workload_dispatch",
             tags={"job_id": job_id},
-            fields={}
+            fields={},
         )
 
+
 if __name__ == "__main__":
-    logger.info(f"Starting DataCenter Compute MCP Server on {COMPUTE_MCP_HOST}:{COMPUTE_MCP_PORT} (SSE Transport)...")
+    logger.info(
+        f"Starting DataCenter Compute MCP Server on {COMPUTE_MCP_HOST}:{COMPUTE_MCP_PORT} (SSE Transport)..."
+    )
     mcp.run(transport="sse")

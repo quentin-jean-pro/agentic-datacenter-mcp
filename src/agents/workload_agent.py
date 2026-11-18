@@ -1,10 +1,8 @@
+import asyncio
 import os
 import sys
-import json
-import asyncio
-from typing import Dict, Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
@@ -14,8 +12,8 @@ parent_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from src.config import POLICY_MCP_URL, GOOGLE_API_KEY, GROQ_API_KEY
-from src.agents.schemas import WorkloadRequestAnalysis, WorkloadGraphState
+from src.agents.schemas import WorkloadGraphState, WorkloadRequestAnalysis
+from src.config import GOOGLE_API_KEY, GROQ_API_KEY, POLICY_MCP_URL
 
 # --- SYSTEM PROMPT ---
 SYSTEM_PROMPT_WORKLOAD = (
@@ -25,19 +23,21 @@ SYSTEM_PROMPT_WORKLOAD = (
     "and map temporal scheduling constraints into SLA deadlines and priority tiers."
 )
 
+
 # --- LLM Client Initialization ---
 def get_llm():
     if GOOGLE_API_KEY and GOOGLE_API_KEY != "your_gemini_api_key_here":
         from langchain_google_genai import ChatGoogleGenerativeAI
+
         return ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=GOOGLE_API_KEY,
-            temperature=0.1
+            model="gemini-2.5-flash", google_api_key=GOOGLE_API_KEY, temperature=0.1
         )
     elif GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
         from langchain_groq import ChatGroq
+
         return ChatGroq(model="llama3-8b-8192", groq_api_key=GROQ_API_KEY)
     else:
+
         class MockLLM:
             def with_structured_output(self, schema):
                 class StructuredWrapper:
@@ -48,22 +48,27 @@ def get_llm():
                             gpus_requested=8,
                             priority_tier="tier_1_critical",
                             sla_deadline="demain 8h00 (~20h de marge)",
-                            semantic_summary="Urgent 8x GPU allocation for CrossViT multi-scale botanical classification benchmark."
+                            semantic_summary="Urgent 8x GPU allocation for CrossViT multi-scale botanical classification benchmark.",
                         )
+
                 return StructuredWrapper()
-            
+
             async def ainvoke(self, prompt: str):
                 class Response:
                     content = (
                         "Allocation request parsed and SLA registered. Team context verified: "
                         "node-delta has 8 available GPUs ready for immediate allocation under tier 1 SLA."
                     )
+
                 return Response()
+
         return MockLLM()
+
 
 llm = get_llm()
 
 # --- LangGraph Nodes with Guardian & Token-Budget Guardrails ---
+
 
 async def parse_workload_node(state: WorkloadGraphState) -> dict:
     """
@@ -78,7 +83,9 @@ async def parse_workload_node(state: WorkloadGraphState) -> dict:
     # Calculates realistic SLA margin and avoids redundant token cycles
     if "demain 8h" in p_low or "demain 8:00" in p_low or "demain matin" in p_low:
         computed_deadline = "demain 8h00 (~20h de marge)"
-        computed_tier = "tier_1_critical" if ("critique" in p_low or "urgent" in p_low) else "tier_2_standard"
+        computed_tier = (
+            "tier_1_critical" if ("critique" in p_low or "urgent" in p_low) else "tier_2_standard"
+        )
     elif "4h" in p_low or "4 heures" in p_low:
         computed_deadline = "d'ici 4 heures (< 4h restant)"
         computed_tier = "tier_1_critical"
@@ -97,7 +104,7 @@ async def parse_workload_node(state: WorkloadGraphState) -> dict:
         prompt = (
             f"{SYSTEM_PROMPT_WORKLOAD}\n"
             "Extract structured AI compute scheduling details from this team request:\n"
-            f"\"{raw_text}\""
+            f'"{raw_text}"'
         )
         analysis: WorkloadRequestAnalysis = await structured_llm.ainvoke(prompt)
         # Ensure guardian safety bounds on GPUs
@@ -106,14 +113,19 @@ async def parse_workload_node(state: WorkloadGraphState) -> dict:
     except Exception as e:
         print(f"[Node: parse_workload] Guardian structured fallback applied ({e}).")
         fallback = WorkloadRequestAnalysis(
-            project_name="CrossViT-Herbarium" if "crossvit" in p_low or "herbier" in p_low else ("Llama3-LoRA" if "llama" in p_low else "AI-Workload"),
-            workload_type="vision_transformers" if "crossvit" in p_low or "image" in p_low else ("llm_training" if "llama" in p_low or "lora" in p_low else "batch_inference"),
+            project_name="CrossViT-Herbarium"
+            if "crossvit" in p_low or "herbier" in p_low
+            else ("Llama3-LoRA" if "llama" in p_low else "AI-Workload"),
+            workload_type="vision_transformers"
+            if "crossvit" in p_low or "image" in p_low
+            else ("llm_training" if "llama" in p_low or "lora" in p_low else "batch_inference"),
             gpus_requested=8 if "8" in raw_text else 4,
             priority_tier=computed_tier,
             sla_deadline=computed_deadline,
-            semantic_summary=raw_text[:120].strip()
+            semantic_summary=raw_text[:120].strip(),
         )
         return {"analysis": fallback.model_dump()}
+
 
 async def persist_policy_node(state: WorkloadGraphState) -> dict:
     """
@@ -132,33 +144,49 @@ async def persist_policy_node(state: WorkloadGraphState) -> dict:
                     "priority_tier": analysis.get("priority_tier", "standard"),
                     "sla_deadline": analysis.get("sla_deadline", "standard"),
                     "raw_prompt": state["raw_user_input"],
-                    "semantic_summary": analysis.get("semantic_summary", "")
+                    "semantic_summary": analysis.get("semantic_summary", ""),
                 }
-                mcp_res = await session.call_tool(name="add_workload_policy_interaction", arguments=args)
+                mcp_res = await session.call_tool(
+                    name="add_workload_policy_interaction", arguments=args
+                )
                 txt = mcp_res.content[0].text if mcp_res.content else "No response"
                 return {"mcp_add_response": txt}
     except Exception as e:
-        print(f"[Node: persist_policy] Warning: MCP Policy Server offline ({e}). Mocking persistence.")
+        print(
+            f"[Node: persist_policy] Warning: MCP Policy Server offline ({e}). Mocking persistence."
+        )
         return {"mcp_add_response": f"MOCK_PERSISTED_FOR_{state['team_id']}"}
+
 
 async def retrieve_context_node(state: WorkloadGraphState) -> dict:
     """
     Queries past team workloads and SLA history using vector similarity.
     """
-    print(f"[Node: retrieve_context] Retrieving historical SLA context for team '{state['team_id']}'...")
+    print(
+        f"[Node: retrieve_context] Retrieving historical SLA context for team '{state['team_id']}'..."
+    )
     try:
         async with sse_client(POLICY_MCP_URL) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 mcp_res = await session.call_tool(
                     name="get_team_context",
-                    arguments={"team_id": state["team_id"], "query": state["raw_user_input"], "limit": 2}
+                    arguments={
+                        "team_id": state["team_id"],
+                        "query": state["raw_user_input"],
+                        "limit": 2,
+                    },
                 )
                 txt = mcp_res.content[0].text if mcp_res.content else ""
                 return {"mcp_context_response": txt}
     except Exception as e:
-        print(f"[Node: retrieve_context] Warning: MCP Policy Server offline ({e}). Using mock context.")
-        return {"mcp_context_response": "MOCK_HISTORICAL_SLA: Tier-1 batch guaranteed 99.5% completion on time."}
+        print(
+            f"[Node: retrieve_context] Warning: MCP Policy Server offline ({e}). Using mock context."
+        )
+        return {
+            "mcp_context_response": "MOCK_HISTORICAL_SLA: Tier-1 batch guaranteed 99.5% completion on time."
+        }
+
 
 async def synthesize_plan_node(state: WorkloadGraphState) -> dict:
     """
@@ -176,6 +204,7 @@ async def synthesize_plan_node(state: WorkloadGraphState) -> dict:
     )
     return {"final_answer": response}
 
+
 # --- StateGraph Assembly ---
 
 workflow = StateGraph(WorkloadGraphState)
@@ -192,6 +221,7 @@ workflow.add_edge("synthesize_plan", END)
 
 workload_agent_app = workflow.compile()
 
+
 async def run_workload_agent(team_id: str, prompt: str):
     initial_state: WorkloadGraphState = {
         "raw_user_input": prompt,
@@ -199,7 +229,7 @@ async def run_workload_agent(team_id: str, prompt: str):
         "analysis": None,
         "mcp_add_response": None,
         "mcp_context_response": None,
-        "final_answer": None
+        "final_answer": None,
     }
     print(f"🚀 Dispatching Workload Agent for Team '{team_id}'...")
     result = await workload_agent_app.ainvoke(initial_state)
@@ -207,7 +237,7 @@ async def run_workload_agent(team_id: str, prompt: str):
     print(result.get("final_answer"))
     return result
 
+
 if __name__ == "__main__":
     sample_prompt = "We urgently need 8 GPUs to train CrossViT on digitized herbarium sheets before 8 AM tomorrow."
     asyncio.run(run_workload_agent("cv_research_team", sample_prompt))
-

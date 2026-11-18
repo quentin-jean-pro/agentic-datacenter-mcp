@@ -57,6 +57,8 @@ data_policies/
 *.swo
 *~
 .DS_Store
+.ruff_cache/
+uv.lock
 
 
 # Personal interview docs
